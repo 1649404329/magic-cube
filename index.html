@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D立体魔方 - 可拖拽旋转视角</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        }
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            pointer-events: none;
+            backdrop-filter: blur(5px);
+            font-size: 14px;
+            z-index: 10;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            border-left: 4px solid #ff9800;
+        }
+        #controls-tip {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.6);
+            color: #ccc;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            pointer-events: none;
+            font-family: monospace;
+            z-index: 10;
+        }
+        @media (max-width: 600px) {
+            #info { font-size: 10px; bottom: 10px; left: 10px; }
+            #controls-tip { font-size: 9px; bottom: 10px; right: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        🧊 3D 立体魔方 | 标准配色
+    </div>
+    <div id="controls-tip">
+        🖱️ 鼠标拖拽旋转视角 | 右键平移 | 滚动缩放
+    </div>
+
+    <!-- 引入Three.js核心库以及扩展组件 -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        // --- 初始化场景、相机、渲染器 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111122); // 深邃星空蓝黑背景
+        scene.fog = new THREE.FogExp2(0x111122, 0.008); // 轻微雾效增强景深
+
+        // 透视相机 (视角, 宽高比, 近平面, 远平面)
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(4.5, 3.5, 5.5);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true; // 开启阴影映射，增强立体感
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 柔和阴影
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // --- 轨道控制，实现可移动（旋转/缩放/平移）---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;          // 惯性效果
+        controls.dampingFactor = 0.05;
+        controls.rotateSpeed = 1.5;
+        controls.zoomSpeed = 1.2;
+        controls.panSpeed = 0.8;
+        controls.enableZoom = true;
+        controls.enablePan = true;
+        controls.autoRotate = false;
+        controls.target.set(0, 0, 0);
+        
+        // --- 辅助元素：一个很 subtle 的网格地板（半透明，帮助定位空间，但不干扰魔方视觉）---
+        const gridHelper = new THREE.GridHelper(12, 20, 0x88aaff, 0x335588);
+        gridHelper.position.y = -2.2;
+        gridHelper.material.transparent = true;
+        gridHelper.material.opacity = 0.25;
+        scene.add(gridHelper);
+        
+        // 简单的轴线辅助（极简，可选，增加科技感，但为了美观使用淡色）
+        const axesHelper = new THREE.AxesHelper(3.5);
+        axesHelper.material.transparent = true;
+        axesHelper.material.opacity = 0.12;
+        scene.add(axesHelper);
+        
+        // --- 灯光系统：营造立体感和材质质感 ---
+        // 环境光 (均匀照亮)
+        const ambientLight = new THREE.AmbientLight(0x404060, 0.65);
+        scene.add(ambientLight);
+        
+        // 主光源：方向光 (从上往下，右侧偏前)
+        const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        mainLight.position.set(3, 5, 2);
+        mainLight.castShadow = true;
+        mainLight.receiveShadow = false;
+        mainLight.shadow.mapSize.width = 1024;
+        mainLight.shadow.mapSize.height = 1024;
+        scene.add(mainLight);
+        
+        // 辅助补光：背光暖色，增强轮廓
+        const backLight = new THREE.DirectionalLight(0xffaa66, 0.5);
+        backLight.position.set(-2, 1, -3);
+        scene.add(backLight);
+        
+        // 冷色侧补光，增加立体感
+        const fillLight = new THREE.PointLight(0x6688ff, 0.4);
+        fillLight.position.set(2, 1, 2.5);
+        scene.add(fillLight);
+        
+        // 底部暖光，让底部颜色不显得太暗
+        const rimLight = new THREE.PointLight(0xffaa66, 0.35);
+        rimLight.position.set(0, -2, 0);
+        scene.add(rimLight);
+        
+        // 一个小光晕效果：在魔方周围加一个微弱的点光源跟随相机? 不加，避免复杂
+        
+        // --- 魔方参数配置 ---
+        // 每个小块的尺寸 (留出间隙，间隙为 1 - cubeSize)
+        const cubeSize = 0.96;
+        const gap = 1 - cubeSize; // 0.04，视觉上黑色缝隙明显
+        // 坐标范围: -1, 0, 1
+        const positions = [-1, 0, 1];
+        
+        // 定义标准魔方六个面的颜色 (RGB 十六进制)
+        // 顺序: 右(x+), 左(x-), 上(y+), 下(y-), 前(z+), 后(z-)
+        const faceColors = {
+            right: 0xff6b35,   // 橙红/橙色 (明亮橙)
+            left: 0xc41e3a,    // 经典红
+            up: 0xeeeeee,      // 白色 (带一点微灰，避免过曝)
+            down: 0xf3d03e,    // 金黄色/黄
+            front: 0x2e86c1,   // 湛蓝
+            back: 0x2ecc71     // 翠绿
+        };
+        
+        // 内部/不可见面材质 (深灰色，带一点金属质感)
+        const innerMaterial = new THREE.MeshStandardMaterial({
+            color: 0x222222,
+            roughness: 0.4,
+            metalness: 0.15,
+            emissive: 0x000000
+        });
+        
+        // 预创建六个面的材质 (以便在构建小块时复用)
+        const matRight = new THREE.MeshStandardMaterial({ color: faceColors.right, roughness: 0.25, metalness: 0.05 });
+        const matLeft = new THREE.MeshStandardMaterial({ color: faceColors.left, roughness: 0.25, metalness: 0.05 });
+        const matUp = new THREE.MeshStandardMaterial({ color: faceColors.up, roughness: 0.3, metalness: 0.02 });
+        const matDown = new THREE.MeshStandardMaterial({ color: faceColors.down, roughness: 0.3, metalness: 0.02 });
+        const matFront = new THREE.MeshStandardMaterial({ color: faceColors.front, roughness: 0.25, metalness: 0.05 });
+        const matBack = new THREE.MeshStandardMaterial({ color: faceColors.back, roughness: 0.25, metalness: 0.05 });
+        
+        // 稍微增加一点光泽感，对白色材质降低粗糙度
+        matUp.roughness = 0.2;
+        matDown.roughness = 0.28;
+        
+        // 辅助函数：根据小块的位置 (x, y, z) 生成对应的材质数组 (顺序: right, left, up, down, front, back)
+        function getMaterialsForBlock(x, y, z) {
+            // 默认全部为内部材质
+            const mats = [
+                innerMaterial, // 右
+                innerMaterial, // 左
+                innerMaterial, // 上
+                innerMaterial, // 下
+                innerMaterial, // 前
+                innerMaterial  // 后
+            ];
+            
+            // 判断在哪个外表面，覆盖对应的材质 (注意坐标范围 -1,0,1)
+            // 右面 (x === 1)
+            if (x === 1) mats[0] = matRight;
+            // 左面 (x === -1)
+            if (x === -1) mats[1] = matLeft;
+            // 上面 (y === 1)
+            if (y === 1) mats[2] = matUp;
+            // 下面 (y === -1)
+            if (y === -1) mats[3] = matDown;
+            // 前面 (z === 1)
+            if (z === 1) mats[4] = matFront;
+            // 后面 (z === -1)
+            if (z === -1) mats[5] = matBack;
+            
+            return mats;
+        }
+        
+        // 创建一个组来存放所有魔方小块，方便管理 (可选)
+        const rubikGroup = new THREE.Group();
+        
+        // 循环生成 27 个小块 (3x3x3)
+        for (let i = 0; i < positions.length; i++) {
+            const x = positions[i];
+            for (let j = 0; j < positions.length; j++) {
+                const y = positions[j];
+                for (let k = 0; k < positions.length; k++) {
+                    const z = positions[k];
+                    
+                    // 获取该位置的材质数组
+                    const materials = getMaterialsForBlock(x, y, z);
+                    
+                    // 创建几何体 (边长 cubeSize)
+                    const geometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+                    // 使用材质数组构建 Mesh
+                    const cube = new THREE.Mesh(geometry, materials);
+                    // 设置位置: 间距为1，中心在整数坐标上
+                    cube.position.set(x, y, z);
+                    
+                    // 开启阴影投射和接收 (为了效果更真实)
+                    cube.castShadow = true;
+                    cube.receiveShadow = false; // 小块之间不互相投射阴影节省性能
+                    
+                    // 可以添加一个微弱的边缘高亮轮廓？不需要，但为了趣味，给每个小块加一个极细的边框？不加保持清爽
+                    
+                    rubikGroup.add(cube);
+                }
+            }
+        }
+        
+        scene.add(rubikGroup);
+        
+        // 可选：为了增加魔方的科技感，在魔方外围添加一个半透明的线框立方体 (装饰)
+        const wireframeBoxGeometry = new THREE.BoxGeometry(3.08, 3.08, 3.08);
+        const wireframeEdges = new THREE.EdgesGeometry(wireframeBoxGeometry);
+        const wireframeMat = new THREE.LineBasicMaterial({ color: 0x5a7d9a, transparent: true, opacity: 0.2 });
+        const wireframe = new THREE.LineSegments(wireframeEdges, wireframeMat);
+        rubikGroup.add(wireframe);
+        
+        // 在魔方中心添加一个极小的发光点，增加核心感 (可选)
+        const coreGlow = new THREE.Mesh(
+            new THREE.SphereGeometry(0.08, 8, 8),
+            new THREE.MeshStandardMaterial({ color: 0xffaa55, emissive: 0x442200, emissiveIntensity: 0.8 })
+        );
+        rubikGroup.add(coreGlow);
+        
+        // --- 简单粒子效果 (背景星空，增加动态氛围，不影响性能) ---
+        const starGeometry = new THREE.BufferGeometry();
+        const starCount = 800;
+        const starPositions = new Float32Array(starCount * 3);
+        for (let i = 0; i < starCount; i++) {
+            // 分布在较大范围
+            starPositions[i*3] = (Math.random() - 0.5) * 200;
+            starPositions[i*3+1] = (Math.random() - 0.5) * 100;
+            starPositions[i*3+2] = (Math.random() - 0.5) * 80 - 40;
+        }
+        starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+        const starMaterial = new THREE.PointsMaterial({ color: 0xaaccff, size: 0.08, transparent: true, opacity: 0.6 });
+        const stars = new THREE.Points(starGeometry, starMaterial);
+        scene.add(stars);
+        
+        // 缓慢旋转星空的动画 (极慢)
+        function animateStars() {
+            stars.rotation.y += 0.0005;
+            stars.rotation.x += 0.0003;
+            requestAnimationFrame(animateStars);
+        }
+        animateStars();
+        
+        // --- 辅助元素：轻微的地面反射光晕(圆形光晕) ---
+        const circlePlaneMat = new THREE.MeshStandardMaterial({ color: 0x2266aa, emissive: 0x004466, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+        const groundGlow = new THREE.Mesh(new THREE.CircleGeometry(2.5, 16), circlePlaneMat);
+        groundGlow.rotation.x = -Math.PI / 2;
+        groundGlow.position.y = -1.85;
+        scene.add(groundGlow);
+        
+        // --- 简单动画：魔方整体有一个微小的浮动? 不加，保持用户控制纯净，但为了生动让星星和光晕动即可 ---
+        
+        // 动态光效：让补光颜色缓慢变化 (非常 subtle)
+        let time = 0;
+        
+        // --- 渲染循环 ---
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            time += 0.012;
+            
+            // 动态微调辅助光源颜色和强度，增加生动性 (不影响魔方识别)
+            const hue = (Math.sin(time * 0.2) * 0.1);
+            fillLight.intensity = 0.45 + Math.sin(time * 0.7) * 0.05;
+            rimLight.intensity = 0.35 + Math.cos(time * 0.5) * 0.08;
+            
+            // 星空缓慢自转已经在独立动画中，这里更新轨道控制
+            controls.update(); // 更新轨道控制 (实现流畅的交互)
+            
+            // 让核心光晕呼吸效果
+            if (coreGlow.material) {
+                const intensity = 0.6 + Math.sin(time * 3) * 0.3;
+                coreGlow.material.emissiveIntensity = intensity;
+            }
+            
+            // 渲染场景
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+        
+        // --- 窗口自适应 ---
+        window.addEventListener('resize', onWindowResize, false);
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // 控制台输出就绪信息
+        console.log('3D魔方已加载 | 使用鼠标拖拽旋转/右键平移/滚轮缩放');
+        
+        // 小彩蛋: 点击控制台输出魔方配色信息
+        const style = "color: #ff9800; font-size: 14px;";
+        console.log("%c✨ 3D 魔方已启动 | 标准配色：橙/红/白/黄/蓝/绿", style);
+    </script>
+</body>
+</html>
